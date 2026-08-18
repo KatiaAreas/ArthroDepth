@@ -40,7 +40,7 @@ from tqdm import tqdm
 from depth_anything_3.api import DepthAnything3
 
 from arthronav.lora import inject_lora, inject_vector_lora
-from arthronav.losses import masked_l1_loss
+from arthronav.losses import masked_l1_loss, gradient_loss
 from arthronav.scared_io import build_frame_list, split_frames
 from arthronav.scared_dataset import SCAREDDataset
 
@@ -83,6 +83,8 @@ def main():
     ap.add_argument("--num-workers", type=int, default=4)
     ap.add_argument("--bad-files", type=str, default="bad_h5_files.txt",
                      help="path to the known-bad-files list from scan_h5_integrity.py")
+    ap.add_argument("--grad-loss-weight", type=float, default=0.0,
+                     help="weight for the gradient-matching loss term; 0.0 = pure L1 (baseline)")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -144,7 +146,12 @@ def main():
             output = net(rgb, export_feat_layers=[])
             pred = output.depth.squeeze(1)
 
-            loss = masked_l1_loss(pred, depth_gt, valid_mask)
+            loss_l1 = masked_l1_loss(pred, depth_gt, valid_mask)
+            if args.grad_loss_weight > 0:
+                loss_grad = gradient_loss(pred, depth_gt, valid_mask)
+                loss = loss_l1 + args.grad_loss_weight * loss_grad
+            else:
+                loss = loss_l1
 
             optimizer.zero_grad()
             loss.backward()

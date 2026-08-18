@@ -4,6 +4,13 @@ held-out split, reporting AbsRel, RMSE, and raw min/max/mean absolute
 error in meters (the metric that actually reveals worst-case error,
 which AbsRel/RMSE average away).
 
+Handles both LoRA modes: uniform-rank LoRA (qkv+proj, LoRALinear) and
+Vector-LoRA (q/v-only fused-qkv, QKVLoRA). Each checkpoint's entry says
+which mode it needs, so the right injection function runs before
+loading that checkpoint's state dict, since the two modes produce
+differently-named parameters and loading one into the other's structure
+would silently do nothing or error.
+
 Usage:
     python -m arthronav.validate_all_checkpoints
 """
@@ -15,7 +22,7 @@ from tqdm import tqdm
 
 from depth_anything_3.api import DepthAnything3
 
-from arthronav.lora import inject_lora
+from arthronav.lora import inject_lora, inject_vector_lora
 from arthronav.metrics import abs_rel, rmse, abs_error_stats
 from arthronav.scared_io import build_frame_list, split_frames
 from arthronav.scared_dataset import SCAREDDataset
@@ -25,17 +32,39 @@ JSON_ROOT = "/mnt/areas_nas/SLAM/scared_dataset_full_copy/frame_trajectory_data"
 TARGET_SIZE = (1022, 1274)
 BASE_CKPT_DIR = "checkpoints/scared_training_checkpoints"
 
+# (label, checkpoint_path_or_None, lora_mode)
+# lora_mode: "uniform" or "vector" -- ignored when checkpoint is None (base model)
 CHECKPOINTS = [
-    ("Base pretrained model", None),
-    ("1% subset, 1 epoch", f"{BASE_CKPT_DIR}/checkpoints_small/epoch_0.pt"),
-    ("Medium run (20%), epoch 0", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_0.pt"),
-    ("Medium run (20%), epoch 1", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_1.pt"),
-    ("Medium run (20%), epoch 2", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_2.pt"),
-    ("Full run, epoch 0", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_0.pt"),
-    ("Full run, epoch 1", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_1.pt"),
-    ("Full run, epoch 2", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_2.pt"),
-    ("Full run, epoch 3", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_3.pt"),
-    ("Full run, epoch 4", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_4.pt"),
+    ("Base pretrained model", None, "uniform"),
+    ("1% subset, 1 epoch", f"{BASE_CKPT_DIR}/checkpoints_small/epoch_0.pt", "uniform"),
+    ("Medium run (20%), epoch 0", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_0.pt", "uniform"),
+    ("Medium run (20%), epoch 1", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_1.pt", "uniform"),
+    ("Medium run (20%), epoch 2", f"{BASE_CKPT_DIR}/checkpoints_medium_run_20subset/epoch_2.pt", "uniform"),
+    ("Full run, epoch 0", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_0.pt", "uniform"),
+    ("Full run, epoch 1", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_1.pt", "uniform"),
+    ("Full run, epoch 2", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_2.pt", "uniform"),
+    ("Full run, epoch 3", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_3.pt", "uniform"),
+    ("Full run, epoch 4", f"{BASE_CKPT_DIR}/checkpoints_long_run_full_v2/epoch_4.pt", "uniform"),
+    ("Vector-LoRA, epoch 0", f"{BASE_CKPT_DIR}/checkpoints_vector_lora_full/epoch_0.pt", "vector"),
+    ("Vector-LoRA, epoch 1", f"{BASE_CKPT_DIR}/checkpoints_vector_lora_full/epoch_1.pt", "vector"),
+    ("Vector-LoRA, epoch 2", f"{BASE_CKPT_DIR}/checkpoints_vector_lora_full/epoch_2.pt", "vector"),
+    ("Vector-LoRA, epoch 3", f"{BASE_CKPT_DIR}/checkpoints_vector_lora_full/epoch_3.pt", "vector"),
+    ("Vector-LoRA, epoch 4", f"{BASE_CKPT_DIR}/checkpoints_vector_lora_full/epoch_4.pt", "vector"),
+    ("Uniform + gradient loss, epoch 0", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_full/epoch_0.pt", "uniform"),
+    ("Uniform + gradient loss, epoch 1", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_full/epoch_1.pt", "uniform"),
+    ("Uniform + gradient loss, epoch 2", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_full/epoch_2.pt", "uniform"),
+    ("Uniform + gradient loss, epoch 3", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_full/epoch_3.pt", "uniform"),
+    ("Uniform + gradient loss, epoch 4", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_full/epoch_4.pt", "uniform"),
+    ("Vector-LoRA + gradient loss, epoch 0", f"{BASE_CKPT_DIR}/checkpoints_vector_gradloss_full/epoch_0.pt", "vector"),
+    ("Vector-LoRA + gradient loss, epoch 1", f"{BASE_CKPT_DIR}/checkpoints_vector_gradloss_full/epoch_1.pt", "vector"),
+    ("Vector-LoRA + gradient loss, epoch 2", f"{BASE_CKPT_DIR}/checkpoints_vector_gradloss_full/epoch_2.pt", "vector"),
+    ("Vector-LoRA + gradient loss, epoch 3", f"{BASE_CKPT_DIR}/checkpoints_vector_gradloss_full/epoch_3.pt", "vector"),
+    ("Vector-LoRA + gradient loss, epoch 4", f"{BASE_CKPT_DIR}/checkpoints_vector_gradloss_full/epoch_4.pt", "vector"),
+    ("Uniform + gradient loss (w=0.1), epoch 0", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_w01_full/epoch_0.pt", "uniform"),
+    ("Uniform + gradient loss (w=0.1), epoch 1", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_w01_full/epoch_1.pt", "uniform"),
+    ("Uniform + gradient loss (w=0.1), epoch 2", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_w01_full/epoch_2.pt", "uniform"),
+    ("Uniform + gradient loss (w=0.1), epoch 3", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_w01_full/epoch_3.pt", "uniform"),
+    ("Uniform + gradient loss (w=0.1), epoch 4", f"{BASE_CKPT_DIR}/checkpoints_uniform_gradloss_w01_full/epoch_4.pt", "uniform"),
 ]
 
 
@@ -48,16 +77,27 @@ def prepare_batch(batch, device):
     return rgb, depth_gt, valid_mask
 
 
-def validate_one(checkpoint_path, val_loader, device, lora_rank=16):
+def validate_one(checkpoint_path, lora_mode, val_loader, device, lora_rank=16):
     wrapper = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE")
     net = wrapper.model
-    inject_lora(net, rank=lora_rank)
+
+    if lora_mode == "vector":
+        inject_vector_lora(net)
+    else:
+        inject_lora(net, rank=lora_rank)
+
     net = net.to(device)
     net.eval()
 
     if checkpoint_path is not None:
         state = torch.load(checkpoint_path, map_location=device)
-        net.load_state_dict(state, strict=False)
+        missing, unexpected = net.load_state_dict(state, strict=False)
+        # sanity check: a mismatched checkpoint would load nothing useful,
+        # so flag it loudly rather than silently reporting base-model numbers
+        loaded_count = len(state) - len(unexpected)
+        if loaded_count == 0:
+            print(f"  WARNING: 0 matching tensors loaded from {checkpoint_path} "
+                  f"(mode={lora_mode}) -- check the mode is correct for this checkpoint")
 
     all_abs_rel, all_rmse = [], []
     all_min, all_max, all_mean = [], [], []
@@ -105,8 +145,8 @@ def main():
     print(f"Validating on {len(ds)} frames (same split used throughout this project)")
 
     results = []
-    for label, ckpt in tqdm(CHECKPOINTS, desc="checkpoints"):
-        r = validate_one(ckpt, val_loader, device)
+    for label, ckpt, mode in tqdm(CHECKPOINTS, desc="checkpoints"):
+        r = validate_one(ckpt, mode, val_loader, device)
         r["label"] = label
         results.append(r)
 

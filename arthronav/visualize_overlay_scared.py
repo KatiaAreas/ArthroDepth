@@ -1,16 +1,22 @@
 """
 Superpose ground-truth depth (as contour lines) directly on top of the
-predicted depth map, on a genuinely unseen validation frame, so
-misalignment is visible in one image rather than by eye-comparing
-separate panels.
+predicted depth map, on a genuinely unseen validation frame.
 
-Depth is converted to real meters (raw h5 value x 0.256) before any
-plotting or error computation, so every number in the figure itself is
-already correct, not just noted as corrected afterward.
+Supports both LoRA modes -- pass --lora-mode uniform (default) or
+--lora-mode vector to match whichever checkpoint you're loading. Loading
+a checkpoint built with one mode into a model injected with the other
+mode silently loads zero matching tensors under strict=False (no error,
+just a quietly wrong result showing the untouched base model instead) --
+this version checks for that and warns loudly if it happens.
 
 Usage:
     python -m arthronav.visualize_overlay_scared --frame-index 0 \
-        --checkpoint checkpoints/scared_training_checkpoints/checkpoints_long_run_full_v2/epoch_2.pt
+        --checkpoint checkpoints/scared_training_checkpoints/checkpoints_long_run_full_v2/epoch_2.pt \
+        --lora-mode uniform
+
+    python -m arthronav.visualize_overlay_scared --frame-index 0 \
+        --checkpoint checkpoints/scared_training_checkpoints/checkpoints_vector_lora_full/epoch_3.pt \
+        --lora-mode vector --out overlay_vector_lora.png
 """
 
 import argparse
@@ -24,7 +30,7 @@ import torch.nn.functional as F
 
 from depth_anything_3.api import DepthAnything3
 
-from arthronav.lora import inject_lora
+from arthronav.lora import inject_lora, inject_vector_lora
 from arthronav.scared_io import build_frame_list, split_frames
 from arthronav.scared_dataset import SCAREDDataset
 
@@ -40,9 +46,10 @@ def main():
                      help="index into the held-out validation split (unseen during training)")
     ap.add_argument("--checkpoint", type=str, default=None,
                      help="path to a LoRA checkpoint; omit to use the base pretrained model")
+    ap.add_argument("--lora-mode", type=str, default="uniform", choices=["uniform", "vector"],
+                     help="must match how the checkpoint was actually trained")
     ap.add_argument("--lora-rank", type=int, default=16)
-    ap.add_argument("--num-contour-levels", type=int, default=6,
-                     help="fewer levels = cleaner lines, easier to read")
+    ap.add_argument("--num-contour-levels", type=int, default=6)
     ap.add_argument("--out", type=str, default="overlay_sample.png")
     args = ap.parse_args()
 
@@ -51,20 +58,31 @@ def main():
     print("Loading model...")
     wrapper = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE")
     net = wrapper.model
-    inject_lora(net, rank=args.lora_rank)
+
+    if args.lora_mode == "vector":
+        inject_vector_lora(net)
+    else:
+        inject_lora(net, rank=args.lora_rank)
+
     net = net.to(device)
     net.eval()
 
     if args.checkpoint is not None:
         state = torch.load(args.checkpoint, map_location=device)
-        net.load_state_dict(state, strict=False)
-        print(f"Loaded checkpoint: {args.checkpoint}")
+        missing, unexpected = net.load_state_dict(state, strict=False)
+        loaded_count = len(state) - len(unexpected)
+        if loaded_count == 0:
+            print(f"WARNING: 0 matching tensors loaded from {args.checkpoint} "
+                  f"with --lora-mode {args.lora_mode}. This checkpoint was probably "
+                  f"trained with the other mode -- the results below are the "
+                  f"UNTOUCHED BASE MODEL, not the checkpoint you asked for.")
+        print(f"Loaded checkpoint: {args.checkpoint} (mode={args.lora_mode}, {loaded_count} tensors matched)")
     else:
         print("No checkpoint given, using base pretrained model.")
 
     print("Building frame list...")
     frames = build_frame_list(H5_ROOT, JSON_ROOT)
-    _, val_frames = split_frames(frames)  # held-out, never seen during training
+    _, val_frames = split_frames(frames)
     ds = SCAREDDataset(val_frames, bad_files_path="bad_h5_files.txt")
 
     sample = ds[args.frame_index]
@@ -74,7 +92,6 @@ def main():
     rgb_in = F.interpolate(rgb_orig, size=TARGET_SIZE, mode="bilinear", align_corners=False)
     rgb_in = rgb_in.unsqueeze(1).to(device)
 
-    # ground truth: convert to real meters immediately, before anything else
     depth_gt = sample["depth"].unsqueeze(0).unsqueeze(0)
     depth_gt = F.interpolate(depth_gt, size=TARGET_SIZE, mode="nearest").squeeze(0).squeeze(0)
     depth_gt = (depth_gt * UNIT_CORRECTION).to(device)
@@ -82,7 +99,6 @@ def main():
 
     with torch.no_grad():
         output = net(rgb_in, export_feat_layers=[])
-    # prediction: same conversion, same point in the pipeline
     depth_pred = output.depth.squeeze(0).squeeze(0) * UNIT_CORRECTION
 
     error_map = torch.zeros_like(depth_gt)
