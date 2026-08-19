@@ -25,6 +25,7 @@ Usage:
 import argparse
 import csv
 import os
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -89,9 +90,14 @@ def train(net, loader, device, epochs, checkpoint_dir, lr=1e-4, min_lr=1e-6):
     total_steps = epochs * len(loader)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=min_lr)
 
+    log_path = os.path.join(checkpoint_dir, "loss_log.csv")
+    with open(log_path, "w", newline="") as f:
+        csv.writer(f).writerow(["epoch", "step", "lr", "loss"])
+
     net.train()
     for epoch in range(epochs):
         pbar = tqdm(loader, desc=f"epoch {epoch}")
+        step = 0
         for batch in pbar:
             rgb, depth_gt, valid_mask = prepare_batch(batch, device)
             output = net(rgb, export_feat_layers=[])
@@ -102,7 +108,12 @@ def train(net, loader, device, epochs, checkpoint_dir, lr=1e-4, min_lr=1e-6):
             loss.backward()
             optimizer.step()
             scheduler.step()
-            pbar.set_postfix(loss=f"{loss.item():.4f}")
+            step += 1
+            current_lr = scheduler.get_last_lr()[0]
+            pbar.set_postfix(loss=f"{loss.item():.4f}", lr=f"{current_lr:.2e}")
+
+            with open(log_path, "a", newline="") as f:
+                csv.writer(f).writerow([epoch, step, current_lr, loss.item()])
 
         ckpt_path = f"{checkpoint_dir}/epoch_{epoch}.pt"
         save_trainable_checkpoint(net, ckpt_path)
