@@ -95,3 +95,25 @@ def split_frames(frames, holdout_sequences: list):
 
 def load_manifest(seq_dir: Path):
     return json.loads((seq_dir / "manifest.json").read_text())
+
+
+def load_focal_px(seq_dir: Path) -> float:
+    """
+    Focal length in pixels, at NATIVE 1920x1080 resolution, from
+    manifest["optics"]["camera_matrix"] (fx, fy averaged -- they're
+    836.58/836.21 here, essentially identical).
+
+    Needed for DA3METRIC-LARGE's documented output correction:
+        metric_depth = focal_px * net_output / 300
+    (see ByteDance-Seed/Depth-Anything-3 README). This correction is
+    ONLY valid for a model that never learned to compensate for it --
+    i.e. zero-shot only. Do NOT apply this to transfer_scared/from_scratch
+    checkpoints: their LoRA weights were trained against uncorrected raw
+    output vs. real-meters GT, so they already learned to absorb this
+    factor internally. Applying the correction on top of an already-
+    adapted checkpoint double-corrects and produces wrong-scale output.
+    """
+    manifest = load_manifest(seq_dir)
+    cm = manifest["optics"]["camera_matrix"]
+    fx, fy = cm[0][0], cm[1][1]
+    return (fx + fy) / 2.0

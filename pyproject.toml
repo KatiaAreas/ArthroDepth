@@ -94,3 +94,6 @@ sections = ["FUTURE","STDLIB","THIRDPARTY","FIRSTPARTY","LOCALFOLDER"]
 skip_gitignore = true
 line_length = 99
 no_lines_before="THIRDPARTY"
+
+[tool.uv.sources]
+areas-theta-compute = { path = "../metrics/areas_theta_compute-0.1.0-py3-none-any.whl" }
