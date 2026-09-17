@@ -49,6 +49,17 @@ def main():
     ap.add_argument("--label", type=str, default=None)
     ap.add_argument("--data-root", type=str, default="/mnt/areas_nas/SLAM/real_knee_dataset",
                      help="use /data/real_knee_dataset on AWS")
+    ap.add_argument("--subset-fraction", type=float, default=1.0,
+                     help="fraction of validation frames to use (0 < f <= 1); SCARED's "
+                          "validation always used 0.1 for speed while staying representative "
+                          "-- this dataset defaults to the full set (1.0) since it's smaller "
+                          "and per-patient, but for quick iteration during debugging, something "
+                          "like 0.1-0.2 is far faster than waiting for all ~4800 frames")
+    ap.add_argument("--split", type=str, default="val", choices=["val", "test"],
+                     help="'val' = the validation patient (used throughout development), "
+                          "'test' = the held-out test patient (2509457F, never touched by "
+                          "any decision made so far -- use this only for a final check, "
+                          "not for iterating)")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -74,11 +85,21 @@ def main():
     print(f"Loaded {args.checkpoint} ({loaded} tensors matched)")
 
     train_patients, val_patients, test_patients = split_patients()
-    print(f"Validating on held-out patient(s): {val_patients} (never seen during training)")
+    chosen_patients = test_patients if args.split == "test" else val_patients
+    split_warning = " -- FINAL CHECK ONLY, do not iterate against this" if args.split == "test" else ""
+    print(f"Validating on held-out patient(s): {chosen_patients} (split={args.split}){split_warning}")
 
-    val_frames = build_frame_list(args.data_root, val_patients)
+    val_frames = build_frame_list(args.data_root, chosen_patients)
     if len(val_frames) == 0:
-        raise RuntimeError(f"No validation frames found under {args.data_root} for {val_patients}")
+        raise RuntimeError(f"No frames found under {args.data_root} for {chosen_patients}")
+
+    if args.subset_fraction < 1.0:
+        import random
+        rng = random.Random(42)
+        original_count = len(val_frames)
+        n_keep = max(1, int(original_count * args.subset_fraction))
+        val_frames = rng.sample(val_frames, n_keep)
+        print(f"Using subset: {n_keep} / {original_count} frames ({args.subset_fraction:.0%})")
 
     val_ds = RealKneeDataset(val_frames, load_sigma=False)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
@@ -87,9 +108,15 @@ def main():
     all_abs_rel, all_rmse = [], []
     all_min, all_max, all_mean = [], [], []
 
+    skipped_empty = 0
     with torch.no_grad():
         for batch in val_loader:
             rgb, depth_gt, valid_mask = prepare_batch(batch, device)
+
+            if valid_mask.sum().item() == 0:
+                skipped_empty += 1
+                continue
+
             output = net(rgb, export_feat_layers=[])
             pred = output.depth.squeeze(1)
 
@@ -100,6 +127,10 @@ def main():
             all_min.append(stats["min_error_m"])
             all_max.append(stats["max_error_m"])
             all_mean.append(stats["mean_error_m"])
+
+    if skipped_empty > 0:
+        print(f"\nSkipped {skipped_empty} frames with zero valid pixels (no ground truth "
+              f"to compare against for these frames)")
 
     print(f"\n=== {label} ===")
     print(f"  AbsRel:     {sum(all_abs_rel)/len(all_abs_rel):.4f}")
