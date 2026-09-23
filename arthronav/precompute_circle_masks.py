@@ -112,7 +112,7 @@ def process_clip(detector, clip_dir, clip_name):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--patient", type=str, default=None)
-    ap.add_argument("--view", type=str, default=None, choices=["lateral", "medial"])
+    ap.add_argument("--view", type=str, default=None)
     ap.add_argument("--all-prepared-clips", action="store_true")
     ap.add_argument("--data-root", type=str, default=DATA_ROOT)
     args = ap.parse_args()

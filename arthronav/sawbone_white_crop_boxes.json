@@ -1,0 +1,142 @@
+{
+  "20260917-134858-eeeeeeee": {
+    "center": [
+      954.0,
+      528.0
+    ],
+    "radius": 519.0,
+    "box": [
+      436,
+      10,
+      1472,
+      1046
+    ],
+    "detected_on": "depth/20260917-134858-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-134939-eeeeeeee": {
+    "center": [
+      954.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      436,
+      10,
+      1472,
+      1046
+    ],
+    "detected_on": "depth/20260917-134939-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135011-eeeeeeee": {
+    "center": [
+      949.0,
+      528.0
+    ],
+    "radius": 519.0,
+    "box": [
+      431,
+      10,
+      1467,
+      1046
+    ],
+    "detected_on": "depth/20260917-135011-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135034-eeeeeeee": {
+    "center": [
+      951.0,
+      528.0
+    ],
+    "radius": 519.0,
+    "box": [
+      433,
+      10,
+      1469,
+      1046
+    ],
+    "detected_on": "depth/20260917-135034-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135100-eeeeeeee": {
+    "center": [
+      952.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      434,
+      10,
+      1470,
+      1046
+    ],
+    "detected_on": "depth/20260917-135100-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135126-eeeeeeee": {
+    "center": [
+      950.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      432,
+      10,
+      1468,
+      1046
+    ],
+    "detected_on": "depth/20260917-135126-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135156-eeeeeeee": {
+    "center": [
+      951.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      433,
+      10,
+      1469,
+      1046
+    ],
+    "detected_on": "depth/20260917-135156-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135219-eeeeeeee": {
+    "center": [
+      950.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      432,
+      10,
+      1468,
+      1046
+    ],
+    "detected_on": "depth/20260917-135219-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135304-eeeeeeee": {
+    "center": [
+      951.0,
+      525.0
+    ],
+    "radius": 520.0,
+    "box": [
+      433,
+      7,
+      1469,
+      1043
+    ],
+    "detected_on": "depth/20260917-135304-eeeeeeee/rgb/000001.png"
+  },
+  "20260917-135325-eeeeeeee": {
+    "center": [
+      949.0,
+      528.0
+    ],
+    "radius": 520.0,
+    "box": [
+      431,
+      10,
+      1467,
+      1046
+    ],
+    "detected_on": "depth/20260917-135325-eeeeeeee/rgb/000001.png"
+  }
+}

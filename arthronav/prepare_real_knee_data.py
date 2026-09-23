@@ -65,7 +65,7 @@ def s3_download(s3_uri, local_path, profile=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--patient", required=True, help="e.g. 2509457F")
-    ap.add_argument("--view", required=True, choices=["lateral", "medial"])
+    ap.add_argument("--view", required=True)
     ap.add_argument("--s3-depth-zip", required=True)
     ap.add_argument("--s3-video", required=True)
     ap.add_argument("--out-root", required=True)
