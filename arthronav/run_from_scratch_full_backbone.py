@@ -27,10 +27,10 @@ from tqdm import tqdm
 from depth_anything_3.api import DepthAnything3
 from arthronav.losses import masked_l1_loss
 from arthronav.metrics import compute_all_metrics, abs_error_stats, error_distribution
-from arthronav.sobone_io import build_frame_list, split_frames
-from arthronav.sobone_dataset import SoboneDataset
+from arthronav.sawbone_io import build_frame_list, split_frames
+from arthronav.sawbone_dataset import SawboneDataset
 
-SOBONE_ROOT = "/mnt/areas_nas/SLAM/sobone_dataset"
+SAWBONE_ROOT = "/mnt/areas_nas/SLAM/sawbone_dataset"
 CROP_SIZE = 1022
 
 ALL_SEQUENCES = [
@@ -159,12 +159,12 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    frames = build_frame_list(Path(SOBONE_ROOT), ALL_SEQUENCES)
+    frames = build_frame_list(Path(SAWBONE_ROOT), ALL_SEQUENCES)
     train_frames, val_frames = split_frames(frames, HOLDOUT)
     print(f"Train: {len(train_frames)} frames, Val (held out): {len(val_frames)} frames")
 
-    train_ds = SoboneDataset(train_frames, crop_size=CROP_SIZE)
-    val_ds = SoboneDataset(val_frames, crop_size=CROP_SIZE)
+    train_ds = SawboneDataset(train_frames, crop_size=CROP_SIZE)
+    val_ds = SawboneDataset(val_frames, crop_size=CROP_SIZE)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
@@ -185,7 +185,7 @@ def main():
         p.requires_grad = True
     net = net.to(device)
 
-    checkpoint_dir = "checkpoints/sobone_full_backbone_scratch"
+    checkpoint_dir = "checkpoints/sawbone_full_backbone_scratch"
     os.makedirs(checkpoint_dir, exist_ok=True)
     train(net, train_loader, device, args.epochs, checkpoint_dir)
 

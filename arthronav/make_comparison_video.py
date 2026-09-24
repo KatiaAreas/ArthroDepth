@@ -1,5 +1,5 @@
 """
-Build a comparison video over a held-out sobone sequence: RGB alongside
+Build a comparison video over a held-out sawbone sequence: RGB alongside
 zero-shot / transfer_scared / from_scratch depth predictions, with
 per-frame error metrics overlaid and pixels exceeding 1cm/5cm error
 highlighted in orange/red.
@@ -17,9 +17,9 @@ import matplotlib.cm as cm
 
 from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
-from arthronav.sobone_io import build_frame_list
-from arthronav.sobone_dataset import SoboneDataset
-from arthronav.test_sobone import prepare_batch, SOBONE_ROOT
+from arthronav.sawbone_io import build_frame_list
+from arthronav.sawbone_dataset import SawboneDataset
+from arthronav.test_sawbone import prepare_batch, SAWBONE_ROOT
 
 PANEL_LABELS = {"zero_shot": "Zero-shot", "transfer_scared": "Transfer (SCARED)", "from_scratch": "From scratch"}
 
@@ -65,10 +65,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sequence", type=str, default="tour_lateral_3_cartilage")
     ap.add_argument("--transfer-checkpoint", type=str,
-                     default="checkpoints/sobone_transfer_scared/epoch_4.pt")
+                     default="checkpoints/sawbone_transfer_scared/epoch_4.pt")
     ap.add_argument("--scratch-checkpoint", type=str,
-                     default="checkpoints/sobone_from_scratch/epoch_4.pt")
-    ap.add_argument("--out", type=str, default="sobone_comparison.mp4")
+                     default="checkpoints/sawbone_from_scratch/epoch_4.pt")
+    ap.add_argument("--out", type=str, default="sawbone_comparison.mp4")
     ap.add_argument("--max-frames", type=int, default=None)
     ap.add_argument("--fps", type=int, default=6)
     args = ap.parse_args()
@@ -82,10 +82,10 @@ def main():
         "from_scratch": load_model("from_scratch", device, args.scratch_checkpoint),
     }
 
-    frames = build_frame_list(Path(SOBONE_ROOT), [args.sequence])
+    frames = build_frame_list(Path(SAWBONE_ROOT), [args.sequence])
     if args.max_frames:
         frames = frames[:args.max_frames]
-    ds = SoboneDataset(frames)
+    ds = SawboneDataset(frames)
     print(f"Running on {len(ds)} frames from {args.sequence}")
 
     all_gt_vals = []

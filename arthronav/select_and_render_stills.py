@@ -20,9 +20,9 @@ import matplotlib.cm as cm
 
 from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
-from arthronav.sobone_io import build_frame_list
-from arthronav.sobone_dataset import SoboneDataset
-from arthronav.test_sobone import prepare_batch, SOBONE_ROOT
+from arthronav.sawbone_io import build_frame_list
+from arthronav.sawbone_dataset import SawboneDataset
+from arthronav.test_sawbone import prepare_batch, SAWBONE_ROOT
 
 MODES = ["zero_shot", "transfer_scared", "from_scratch"]
 PANEL_LABELS = {"zero_shot": "Zero-shot", "transfer_scared": "Transfer (SCARED)", "from_scratch": "From scratch"}
@@ -139,10 +139,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sequence", type=str, default="tour_lateral_3_cartilage")
     ap.add_argument("--transfer-checkpoint", type=str,
-                     default="checkpoints/sobone_transfer_scared/epoch_4.pt")
+                     default="checkpoints/sawbone_transfer_scared/epoch_4.pt")
     ap.add_argument("--scratch-checkpoint", type=str,
-                     default="checkpoints/sobone_from_scratch/epoch_4.pt")
-    ap.add_argument("--out-dir", type=str, default="sobone_stills")
+                     default="checkpoints/sawbone_from_scratch/epoch_4.pt")
+    ap.add_argument("--out-dir", type=str, default="sawbone_stills")
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -153,8 +153,8 @@ def main():
         "from_scratch": load_model("from_scratch", device, args.scratch_checkpoint),
     }
 
-    frames = build_frame_list(Path(SOBONE_ROOT), [args.sequence])
-    ds = SoboneDataset(frames)
+    frames = build_frame_list(Path(SAWBONE_ROOT), [args.sequence])
+    ds = SawboneDataset(frames)
     print(f"Running pass 1 (metrics only) on {len(ds)} frames from {args.sequence}...")
     rows = compute_frame_metrics(models, ds, device)
 

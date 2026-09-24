@@ -8,7 +8,7 @@ patients x 1-2 views each), applying, uniformly across every clip:
   - resize to 1022x1022 (this project's established convention)
   - conversion from the existing millimeters convention to real
     meters (matching DA3's own native output scale, and the now-
-    established meters convention used for sobone red/white -- a
+    established meters convention used for sawbone red/white -- a
     deliberate departure from every earlier real-knee script, which
     stayed in mm throughout; empirically, from-scratch training in mm
     still produced reasonable results there, since a freshly-

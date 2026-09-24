@@ -1,6 +1,6 @@
 """
 Zero-shot / transfer-from-SCARED / from-scratch comparison on the
-sobone/cartilage dataset (currently tour_lateral_0_cartilage only).
+sawbone/cartilage dataset (currently tour_lateral_0_cartilage only).
 
 Modes:
   zero_shot        : base DA3METRIC-LARGE, no LoRA, no fine-tuning.
@@ -12,14 +12,14 @@ Modes:
 Note: pools all 8 sequences by default, holding out tour_lateral_3 and
 tour_medial_3 entirely (one lateral, one medial) as genuine unseen
 validation -- the first real generalization test, not a smoke test.
-in sobone_io.split_frames), there's no held-out val set yet -- this is
+in sawbone_io.split_frames), there's no held-out val set yet -- this is
 a pipeline smoke test, not a generalization claim. Metrics reported are
 on the same 343 frames used for training in the two fine-tune modes.
 
 Usage:
-    python -m arthronav.test_sobone --mode zero_shot
-    python -m arthronav.test_sobone --mode transfer_scared --epochs 5
-    python -m arthronav.test_sobone --mode from_scratch --epochs 5
+    python -m arthronav.test_sawbone --mode zero_shot
+    python -m arthronav.test_sawbone --mode transfer_scared --epochs 5
+    python -m arthronav.test_sawbone --mode from_scratch --epochs 5
 """
 
 import argparse
@@ -38,10 +38,10 @@ from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
 from arthronav.losses import masked_l1_loss
 from arthronav.metrics import compute_all_metrics, abs_error_stats, error_distribution
-from arthronav.sobone_io import build_frame_list, split_frames
-from arthronav.sobone_dataset import SoboneDataset
+from arthronav.sawbone_io import build_frame_list, split_frames
+from arthronav.sawbone_dataset import SawboneDataset
 
-SOBONE_ROOT = "/mnt/areas_nas/SLAM/sobone_dataset"
+SAWBONE_ROOT = "/mnt/areas_nas/SLAM/sawbone_dataset"
 TARGET_SIZE = (1078, 1918)
 
 VECTOR_LORA_SCARED_CKPT = (
@@ -183,14 +183,14 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
-    frames = build_frame_list(Path(SOBONE_ROOT), args.sequences)
+    frames = build_frame_list(Path(SAWBONE_ROOT), args.sequences)
     train_frames, val_frames = split_frames(frames, args.holdout_sequences)
     print(f"Total frames: {len(frames)} from {args.sequences}")
     print(f"Train: {len(train_frames)} frames (sequences: {[s for s in args.sequences if s not in args.holdout_sequences]})")
     print(f"Val (held out, unseen): {len(val_frames)} frames (sequences: {args.holdout_sequences})")
 
-    train_ds = SoboneDataset(train_frames)
-    val_ds = SoboneDataset(val_frames)
+    train_ds = SawboneDataset(train_frames)
+    val_ds = SawboneDataset(val_frames)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                                num_workers=args.num_workers)
@@ -200,7 +200,7 @@ def main():
     net = build_model(args.mode, device, checkpoint_path=args.scared_checkpoint)
 
     if args.mode != "zero_shot":
-        checkpoint_dir = args.checkpoint_dir or f"checkpoints/sobone_{args.mode}"
+        checkpoint_dir = args.checkpoint_dir or f"checkpoints/sawbone_{args.mode}"
         os.makedirs(checkpoint_dir, exist_ok=True)
         train(net, train_loader, device, args.epochs, checkpoint_dir)
 

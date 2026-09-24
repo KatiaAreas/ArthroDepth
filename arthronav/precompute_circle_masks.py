@@ -1,12 +1,12 @@
 """
 Detect the endoscope circle on EVERY frame of every prepared real-knee
-clip (unlike SOBONE's precompute_crop_boxes.py, which detects once per
+clip (unlike SAWBONE's precompute_crop_boxes.py, which detects once per
 sequence -- the notch position moves during real surgery, so the circle
 genuinely changes frame to frame here, confirmed empirically before
 building this).
 
 Run standalone, before any script that imports torch -- same reason as
-SOBONE's version: opencv-contrib-python's bundled cuDNN clashes with
+SAWBONE's version: opencv-contrib-python's bundled cuDNN clashes with
 PyTorch's cuDNN if both load in the same process
 (CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH).
 

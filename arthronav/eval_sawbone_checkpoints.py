@@ -1,10 +1,10 @@
 """
-Evaluate every epoch checkpoint from both sobone fine-tuning runs against
+Evaluate every epoch checkpoint from both sawbone fine-tuning runs against
 the same held-out validation frames, to compare convergence speed with
 real validation metrics rather than training-loss noise.
 
 Usage:
-    python -m arthronav.eval_sobone_checkpoints
+    python -m arthronav.eval_sawbone_checkpoints
 """
 import csv
 from pathlib import Path
@@ -16,9 +16,9 @@ from tqdm import tqdm
 from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
 from arthronav.metrics import compute_all_metrics, abs_error_stats
-from arthronav.sobone_io import build_frame_list, split_frames
-from arthronav.sobone_dataset import SoboneDataset
-from arthronav.test_sobone import prepare_batch, SOBONE_ROOT
+from arthronav.sawbone_io import build_frame_list, split_frames
+from arthronav.sawbone_dataset import SawboneDataset
+from arthronav.test_sawbone import prepare_batch, SAWBONE_ROOT
 
 ALL_SEQUENCES = [
     "tour_lateral_0_cartilage", "tour_lateral_1_cartilage",
@@ -29,8 +29,8 @@ ALL_SEQUENCES = [
 HOLDOUT = ["tour_lateral_3_cartilage", "tour_medial_3_cartilage"]
 
 RUNS = {
-    "transfer_scared": "checkpoints/sobone_transfer_scared",
-    "from_scratch": "checkpoints/sobone_from_scratch",
+    "transfer_scared": "checkpoints/sawbone_transfer_scared",
+    "from_scratch": "checkpoints/sawbone_from_scratch",
 }
 
 
@@ -66,10 +66,10 @@ def evaluate_checkpoint(ckpt_path, val_loader, device):
 
 def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    frames = build_frame_list(Path(SOBONE_ROOT), ALL_SEQUENCES)
+    frames = build_frame_list(Path(SAWBONE_ROOT), ALL_SEQUENCES)
     _, val_frames = split_frames(frames, HOLDOUT)
     print(f"Validating on {len(val_frames)} held-out frames: {HOLDOUT}")
-    val_ds = SoboneDataset(val_frames)
+    val_ds = SawboneDataset(val_frames)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
 
     results = []
@@ -92,11 +92,11 @@ def main():
     for r in results:
         print(f"{r['run']:<18} {r['epoch']:<6} {r['AbsRel']:>8.4f} {r['RMSE_mm']:>10.3f} {r['mean_error_mm']:>12.3f}")
 
-    with open("sobone_convergence_comparison.csv", "w", newline="") as f:
+    with open("sawbone_convergence_comparison.csv", "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["run", "epoch", "AbsRel", "RMSE_mm", "mean_error_mm"])
         writer.writeheader()
         writer.writerows(results)
-    print("\nWrote sobone_convergence_comparison.csv")
+    print("\nWrote sawbone_convergence_comparison.csv")
 
 
 if __name__ == "__main__":

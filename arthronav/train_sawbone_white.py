@@ -7,9 +7,9 @@ red-sawbone resolution exactly).
 Two modes:
   - From scratch: omit --init-checkpoint, starts from base DA3METRIC-LARGE.
   - Continue from best existing sawbone model: --init-checkpoint pointing
-    at the best original (red) sobone checkpoint, sobone_from_scratch
+    at the best original (red) sawbone checkpoint, sawbone_from_scratch
     epoch_4 (AbsRel 0.0597 on that dataset's own held-out set, the
-    slightly-better of the two original sobone runs).
+    slightly-better of the two original sawbone runs).
 
 Ground truth is real meters (depth_png, uint16, raw*0.01 = mm, then /1000
 = meters), matching the original red-sawbone convention exactly --
@@ -18,17 +18,17 @@ matches ground truth in meters (~0.02-0.09), not millimeters. An earlier
 version of this script used millimeters directly, a real inconsistency
 introduced when continuing fine-tuning from a meters-calibrated
 checkpoint -- fixed here to keep the same unit throughout the whole
-fine-tuning chain (DA3 -> SCARED -> sobone red -> sobone white).
+fine-tuning chain (DA3 -> SCARED -> sawbone red -> sawbone white).
 
 Usage:
     # from scratch (AWS)
     python -m arthronav.train_sawbone_white --epochs 5 \
         --checkpoint-dir checkpoints/sawbone_white_from_scratch
 
-    # continuing from the best original sobone checkpoint (Grenoble)
+    # continuing from the best original sawbone checkpoint (Grenoble)
     python -m arthronav.train_sawbone_white --epochs 5 \
-        --init-checkpoint checkpoints/sobone_from_scratch/epoch_4.pt \
-        --checkpoint-dir checkpoints/sawbone_white_from_sobone
+        --init-checkpoint checkpoints/sawbone_from_scratch/epoch_4.pt \
+        --checkpoint-dir checkpoints/sawbone_white_from_sawbone
 """
 
 import argparse

@@ -1,5 +1,5 @@
 """
-I/O for the growing sobone/cartilage dataset (tour_lateral_0, 1, 2, ...).
+I/O for the growing sawbone/cartilage dataset (tour_lateral_0, 1, 2, ...).
 
 Ground truth source: depth_png (uint16). Per manifest.json's "depth" block:
 
@@ -63,14 +63,14 @@ def load_rgb(path: Path):
     img = np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
     return img
 
-def build_frame_list(sobone_root: Path, sequence_names: list):
+def build_frame_list(sawbone_root: Path, sequence_names: list):
     """
     Pools frames across the given sequences, tagging each with its
     sequence_id so split_frames() can hold out whole sequences.
     """
     frames = []
     for seq_name in sequence_names:
-        seq_dir = sobone_root / seq_name
+        seq_dir = sawbone_root / seq_name
         rgb_files = sorted((seq_dir / "rgb").glob("*"))
         depth_dir = seq_dir / "depth_png"
         for rgb_path in rgb_files:

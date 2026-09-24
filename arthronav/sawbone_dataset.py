@@ -1,5 +1,5 @@
 """
-Sobone/cartilage dataset (PNG-depth-backed). Wraps sobone_io.py's frame list,
+Sawbone/cartilage dataset (PNG-depth-backed). Wraps sawbone_io.py's frame list,
 mirroring SCAREDDataset's shape and conventions so the training/eval loop
 code can stay unified across both datasets.
 """
@@ -9,11 +9,11 @@ import torch
 from pathlib import Path
 from torch.utils.data import Dataset
 
-from arthronav.sobone_io import load_frame_depth_png, load_rgb
+from arthronav.sawbone_io import load_frame_depth_png, load_rgb
 from arthronav.crop_utils import get_crop_box_for_sequence, crop_and_resize
 
 
-class SoboneDataset(Dataset):
+class SawboneDataset(Dataset):
     """
     crop_size: if set, detects the endoscope circle once per sequence
     (cached), crops RGB+depth to a square around it, then resizes to

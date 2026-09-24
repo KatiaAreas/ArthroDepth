@@ -7,7 +7,7 @@ Two from-scratch training runs on the SAME crop, different resolutions:
 
 Crop boxes are precomputed offline (precompute_crop_boxes.py, run once in
 a separate Python 3.12 venv with areas_theta_compute installed) and read
-from sobone_crop_boxes.json -- this script never imports cv2 or
+from sawbone_crop_boxes.json -- this script never imports cv2 or
 areas_theta_compute, both of which caused real problems when loaded
 alongside torch in the same process.
 
@@ -29,10 +29,10 @@ from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
 from arthronav.losses import masked_l1_loss
 from arthronav.metrics import compute_all_metrics, abs_error_stats, error_distribution
-from arthronav.sobone_io import build_frame_list, split_frames
-from arthronav.sobone_dataset import SoboneDataset
+from arthronav.sawbone_io import build_frame_list, split_frames
+from arthronav.sawbone_dataset import SawboneDataset
 
-SOBONE_ROOT = "/mnt/areas_nas/SLAM/sobone_dataset"
+SAWBONE_ROOT = "/mnt/areas_nas/SLAM/sawbone_dataset"
 SCORING_SIZE = 1022
 
 ALL_SEQUENCES = [
@@ -167,12 +167,12 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Using device: {device}, training resolution: {args.resolution}, scoring resolution: {SCORING_SIZE}")
 
-    frames = build_frame_list(Path(SOBONE_ROOT), ALL_SEQUENCES)
+    frames = build_frame_list(Path(SAWBONE_ROOT), ALL_SEQUENCES)
     train_frames, val_frames = split_frames(frames, HOLDOUT)
     print(f"Train: {len(train_frames)} frames, Val (held out): {len(val_frames)} frames")
 
-    train_ds = SoboneDataset(train_frames, crop_size=SCORING_SIZE)
-    val_ds = SoboneDataset(val_frames, crop_size=SCORING_SIZE)
+    train_ds = SawboneDataset(train_frames, crop_size=SCORING_SIZE)
+    val_ds = SawboneDataset(val_frames, crop_size=SCORING_SIZE)
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
@@ -182,7 +182,7 @@ def main():
     inject_vector_lora(net)
     net = net.to(device)
 
-    checkpoint_dir = f"checkpoints/sobone_crop_res{args.resolution}"
+    checkpoint_dir = f"checkpoints/sawbone_crop_res{args.resolution}"
     os.makedirs(checkpoint_dir, exist_ok=True)
     train(net, train_loader, device, args.epochs, checkpoint_dir, args.resolution)
 

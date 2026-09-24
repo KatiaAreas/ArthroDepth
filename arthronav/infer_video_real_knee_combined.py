@@ -1,23 +1,24 @@
 """
-Build a side-by-side video (RGB | predicted depth | error vs real ground
-truth) for a white sawbone test sequence. Real depth ground truth exists
-here, so this shows genuine accuracy, not a consistency proxy.
+Build a side-by-side video (RGB | predicted depth | error vs real
+ground truth) for one held-out test clip from the combined real-knee
+dataset. Real depth ground truth exists here, so this shows genuine
+accuracy on real patient tissue, not a consistency proxy.
 
 Data is already circle-cropped and resized to 1022x1022, real meters
-(depth_png, uint16, raw*0.01 = mm, /1000 = meters, matching the
-original red-sawbone convention) -- no further preprocessing needed here.
+(converted from the original mm convention during the combine step).
 
 Usage:
-    python -m arthronav.infer_video_sawbone_white \
-        --seq-dir /mnt/areas_nas/SLAM/sawbone_white_dataset/test/20260917-134858-eeeeeeee \
-        --checkpoint checkpoints/sawbone_white_from_sawbone_v2/epoch_2.pt \
+    python -m arthronav.infer_video_real_knee_combined \
+        --patient 2509457F --view lateral \
+        --checkpoint checkpoints/real_knee_combined_from_scratch/epoch_1.pt \
         --error-threshold-m 0.005 \
-        --out sawbone_white_test_best_v2.mp4
+        --out real_knee_combined_test_2509457F_lateral.mp4
 """
 
 import argparse
 import glob
 import os
+import re
 
 import matplotlib
 matplotlib.use("Agg")
@@ -29,6 +30,8 @@ import torch
 from depth_anything_3.api import DepthAnything3
 
 from arthronav.lora import inject_vector_lora
+
+DATA_ROOT = "/mnt/areas_nas/SLAM/real_knee_combined_dataset"
 
 
 def load_model(checkpoint_path, device):
@@ -57,7 +60,10 @@ def make_panel(rgb_display, pred_m, gt_m, valid_mask, err_mean_m, err_max_m,
     axes[0].axis("off")
 
     gt_masked = np.where(valid_mask, gt_m, np.nan)
-    vmin, vmax = np.nanmin(gt_masked), np.nanmax(gt_masked)
+    if valid_mask.any():
+        vmin, vmax = np.nanmin(gt_masked), np.nanmax(gt_masked)
+    else:
+        vmin, vmax = 0, 1
 
     pred_masked = np.where(valid_mask, pred_m, np.nan)
     axes[1].imshow(pred_masked, cmap="viridis", vmin=vmin, vmax=vmax)
@@ -87,11 +93,13 @@ def make_panel(rgb_display, pred_m, gt_m, valid_mask, err_mean_m, err_max_m,
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--seq-dir", required=True,
-                     help="e.g. .../sawbone_white_dataset/test/20260917-134858-eeeeeeee")
+    ap.add_argument("--patient", required=True)
+    ap.add_argument("--view", required=True)
     ap.add_argument("--checkpoint", required=True)
+    ap.add_argument("--split", default="test", choices=["train", "val", "test"])
+    ap.add_argument("--data-root", default=DATA_ROOT)
     ap.add_argument("--error-threshold-m", type=float, default=0.005)
-    ap.add_argument("--out", default="sawbone_white_test.mp4")
+    ap.add_argument("--out", default="real_knee_combined_video.mp4")
     ap.add_argument("--fps", type=float, default=10.0)
     ap.add_argument("--max-frames", type=int, default=None)
     args = ap.parse_args()
@@ -99,13 +107,28 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     net = load_model(args.checkpoint, device)
 
-    rgb_dir = os.path.join(args.seq_dir, "rgb")
-    depth_dir = os.path.join(args.seq_dir, "depth_png")
-    rgb_paths = sorted(glob.glob(os.path.join(rgb_dir, "*.png")))
+    prefix = f"{args.patient}_{args.view}_"
+    rgb_dir = os.path.join(args.data_root, args.split, "rgb")
+    depth_dir = os.path.join(args.data_root, args.split, "depth")
+
+    all_rgb = glob.glob(os.path.join(rgb_dir, f"{prefix}*.jpg"))
+    frame_re = re.compile(re.escape(prefix) + r"(\d{6})\.jpg$")
+    indexed = []
+    for p in all_rgb:
+        m = frame_re.search(os.path.basename(p))
+        if m:
+            indexed.append((int(m.group(1)), p))
+    indexed.sort()
+
+    if not indexed:
+        raise RuntimeError(f"No frames found for prefix '{prefix}' under {rgb_dir}. "
+                            f"Check --patient/--view/--split match an actual clip.")
+
+    rgb_paths = [p for _, p in indexed]
     if args.max_frames:
         rgb_paths = rgb_paths[:args.max_frames]
 
-    print(f"Processing {len(rgb_paths)} frames from {args.seq_dir}")
+    print(f"Processing {len(rgb_paths)} frames for {args.patient}_{args.view} ({args.split})")
 
     writer = None
     all_mean_errs, all_max_errs = [], []
@@ -113,14 +136,14 @@ def main():
     with torch.no_grad():
         for i, rgb_path in enumerate(rgb_paths):
             frame_id = os.path.splitext(os.path.basename(rgb_path))[0]
-            depth_path = os.path.join(depth_dir, f"{frame_id}.png")
+            depth_path = os.path.join(depth_dir, f"{frame_id}.depth.npy")
+            valid_path = os.path.join(depth_dir, f"{frame_id}.valid.npy")
 
             rgb_bgr = cv2.imread(rgb_path)
             rgb_rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB)
 
-            depth_raw = cv2.imread(depth_path, cv2.IMREAD_UNCHANGED)
-            depth_gt = depth_raw.astype(np.float32) * 0.01 / 1000.0
-            valid = depth_raw > 0
+            depth_gt = np.load(depth_path).astype(np.float32)
+            valid = np.load(valid_path)
 
             rgb_t = torch.from_numpy(rgb_rgb).float().permute(2, 0, 1).unsqueeze(0) / 255.0
             rgb_in = rgb_t.unsqueeze(1).to(device)
@@ -128,9 +151,12 @@ def main():
             output = net(rgb_in, export_feat_layers=[])
             pred_m = output.depth.squeeze(0).squeeze(0).cpu().numpy()
 
-            err_map = np.abs(pred_m - depth_gt)
-            err_mean = err_map[valid].mean() if valid.any() else 0.0
-            err_max = err_map[valid].max() if valid.any() else 0.0
+            if valid.any():
+                err_map = np.abs(pred_m - depth_gt)
+                err_mean = err_map[valid].mean()
+                err_max = err_map[valid].max()
+            else:
+                err_mean = err_max = 0.0
             all_mean_errs.append(err_mean)
             all_max_errs.append(err_max)
 

@@ -9,9 +9,9 @@ of every 3 (by position within the sequence, not by raw frame number,
 so exactly 1/3 is kept regardless of any gaps).
 
 Ground truth: depth_png only (uint16, depth_mm = raw * 0.01, invalid=0
--- verified directly, same convention as the original sobone dataset).
+-- verified directly, same convention as the original sawbone dataset).
 depth_npy exists in the source but is not used, matching the original
-sobone convention of depth_png as the confirmed source.
+sawbone convention of depth_png as the confirmed source.
 
 Sequences and split (train=7, val=1, test=2), derived from
 random.Random(42) over the 10 sequence names, the same seed convention

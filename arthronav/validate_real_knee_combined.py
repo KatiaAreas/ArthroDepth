@@ -1,19 +1,17 @@
 """
-Validate white sawbone checkpoints against the held-out validation
-sequence (20260917-135100-eeeeeeee, 360 frames after 1-in-3 decimation,
-never used in training by either run).
+Validate real-knee-combined checkpoints against the held-out val or
+test splits.
 
-Ground truth is real meters (depth_png, uint16, raw*0.01 = mm, /1000 =
-meters), matching the original red-sawbone convention -- confirmed
-empirically that the red-sawbone checkpoint's raw output magnitude
-matches ground truth in meters, not millimeters.
-Data is already circle-cropped and resized to 1022x1022 by
-prepare_sawbone_white_data.py, so no further resize needed here.
+The model itself outputs and is compared internally in real meters
+(matching training). Displayed results are converted to millimeters
+at the print stage only, for readability -- AbsRel is unitless and
+unaffected; RMSE/mean/max/min error are multiplied by 1000 just before
+printing. The underlying computation stays in meters.
 
 Usage:
-    python -m arthronav.validate_sawbone_white \
-        --checkpoint checkpoints/sawbone_white_from_sawbone_v2/epoch_3.pt \
-        --label "From sawbone v2, epoch 3"
+    python -m arthronav.validate_real_knee_combined \
+        --checkpoint checkpoints/real_knee_combined_from_scratch/epoch_2.pt \
+        --split val --label "Combined from scratch, epoch 2"
 """
 
 import argparse
@@ -30,26 +28,23 @@ from depth_anything_3.api import DepthAnything3
 from arthronav.lora import inject_vector_lora
 from arthronav.metrics import abs_rel, rmse, abs_error_stats
 
-DATA_ROOT = "/mnt/areas_nas/SLAM/sawbone_white_dataset"
+DATA_ROOT = "/mnt/areas_nas/SLAM/real_knee_combined_dataset"
 
 
 def build_frame_list(split_dir):
+    rgb_dir = os.path.join(split_dir, "rgb")
+    depth_dir = os.path.join(split_dir, "depth")
     frames = []
-    seq_dirs = sorted(glob.glob(os.path.join(split_dir, "*")))
-    for seq_dir in seq_dirs:
-        rgb_dir = os.path.join(seq_dir, "rgb")
-        depth_dir = os.path.join(seq_dir, "depth_png")
-        if not os.path.isdir(rgb_dir):
-            continue
-        for rgb_path in sorted(glob.glob(os.path.join(rgb_dir, "*.png"))):
-            frame_id = os.path.splitext(os.path.basename(rgb_path))[0]
-            depth_path = os.path.join(depth_dir, f"{frame_id}.png")
-            if os.path.exists(depth_path):
-                frames.append({"rgb_path": rgb_path, "depth_path": depth_path})
+    for rgb_path in sorted(glob.glob(os.path.join(rgb_dir, "*.jpg"))):
+        frame_id = os.path.splitext(os.path.basename(rgb_path))[0]
+        depth_path = os.path.join(depth_dir, f"{frame_id}.depth.npy")
+        valid_path = os.path.join(depth_dir, f"{frame_id}.valid.npy")
+        if os.path.exists(depth_path) and os.path.exists(valid_path):
+            frames.append({"rgb_path": rgb_path, "depth_path": depth_path, "valid_path": valid_path})
     return frames
 
 
-class SawboneWhiteDataset(Dataset):
+class CombinedRealKneeDataset(Dataset):
     def __init__(self, frame_list):
         self.frames = frame_list
 
@@ -62,12 +57,11 @@ class SawboneWhiteDataset(Dataset):
         rgb = cv2.cvtColor(rgb_bgr, cv2.COLOR_BGR2RGB)
         rgb_t = torch.from_numpy(rgb).permute(2, 0, 1).float() / 255.0
 
-        depth_raw = cv2.imread(entry["depth_path"], cv2.IMREAD_UNCHANGED)
-        depth_m = depth_raw.astype(np.float32) * 0.01 / 1000.0
-        depth_t = torch.from_numpy(depth_m).float()
-        valid_t = torch.from_numpy(depth_raw > 0)
+        depth_m = np.load(entry["depth_path"]).astype(np.float32)
+        valid = np.load(entry["valid_path"])
 
-        return {"rgb": rgb_t, "depth": depth_t, "valid": valid_t}
+        return {"rgb": rgb_t, "depth": torch.from_numpy(depth_m).float(),
+                "valid": torch.from_numpy(valid)}
 
 
 def main():
@@ -75,10 +69,7 @@ def main():
     ap.add_argument("--checkpoint", type=str, required=True)
     ap.add_argument("--label", type=str, default=None)
     ap.add_argument("--data-root", type=str, default=DATA_ROOT)
-    ap.add_argument("--split", type=str, default="val", choices=["val", "test"],
-                     help="'val' = the held-out validation sequence used throughout development "
-                          "(360 frames, 1 sequence); 'test' = the fully held-out test sequences "
-                          "(786 frames, 2 sequences), never touched -- use only for a final check")
+    ap.add_argument("--split", type=str, default="val", choices=["val", "test"])
     args = ap.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -95,23 +86,23 @@ def main():
     _, unexpected = net.load_state_dict(state, strict=False)
     loaded = len(state) - len(unexpected)
     if loaded == 0:
-        print(f"WARNING: 0 tensors matched -- results below would be the untouched base model.")
+        print("WARNING: 0 tensors matched -- results below would be the untouched base model.")
     print(f"Loaded {args.checkpoint} ({loaded} tensors matched)")
 
-    val_frames = build_frame_list(os.path.join(args.data_root, args.split))
-    if len(val_frames) == 0:
+    frames = build_frame_list(os.path.join(args.data_root, args.split))
+    if len(frames) == 0:
         raise RuntimeError(f"No frames found under {args.data_root}/{args.split}")
 
-    val_ds = SawboneWhiteDataset(val_frames)
-    val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=4)
-    print(f"Validating on {len(val_ds)} frames")
+    ds = CombinedRealKneeDataset(frames)
+    loader = DataLoader(ds, batch_size=1, shuffle=False, num_workers=4)
+    print(f"Validating on {len(ds)} frames ({args.split} split)")
 
     all_abs_rel, all_rmse = [], []
     all_min, all_max, all_mean = [], [], []
     skipped_empty = 0
 
     with torch.no_grad():
-        for batch in val_loader:
+        for batch in loader:
             rgb = batch["rgb"].unsqueeze(1).to(device)
             depth_gt = batch["depth"].to(device)
             valid_mask = batch["valid"].to(device)
@@ -134,12 +125,13 @@ def main():
     if skipped_empty > 0:
         print(f"Skipped {skipped_empty} frames with zero valid pixels")
 
+    MM_PER_M = 1000.0
     print(f"\n=== {label} ===")
     print(f"  AbsRel:     {sum(all_abs_rel)/len(all_abs_rel):.4f}")
-    print(f"  RMSE:       {sum(all_rmse)/len(all_rmse):.4f} m")
-    print(f"  Mean error: {sum(all_mean)/len(all_mean):.4f} m")
-    print(f"  Max error:  {max(all_max):.4f} m")
-    print(f"  Min error:  {min(all_min):.4f} m")
+    print(f"  RMSE:       {sum(all_rmse)/len(all_rmse) * MM_PER_M:.3f} mm")
+    print(f"  Mean error: {sum(all_mean)/len(all_mean) * MM_PER_M:.3f} mm")
+    print(f"  Max error:  {max(all_max) * MM_PER_M:.3f} mm")
+    print(f"  Min error:  {min(all_min) * MM_PER_M:.3f} mm")
 
 
 if __name__ == "__main__":

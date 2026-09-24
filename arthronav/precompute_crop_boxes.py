@@ -16,7 +16,7 @@ import numpy as np
 from PIL import Image
 from areas_theta_compute.utils.circle_detector import CircleDetector
 
-SOBONE_ROOT = Path("/mnt/areas_nas/SLAM/sobone_dataset")
+SAWBONE_ROOT = Path("/mnt/areas_nas/SLAM/sawbone_dataset")
 PATCH_SIZE = 14
 CANDIDATE_FRAMES_TO_TRY = 5  # try up to this many frames per sequence before giving up
 
@@ -65,7 +65,7 @@ def main():
     results = {}
 
     for seq_name in SEQUENCES:
-        seq_dir = SOBONE_ROOT / seq_name
+        seq_dir = SAWBONE_ROOT / seq_name
         rgb_files = sorted((seq_dir / "rgb").glob("*.png"))[:CANDIDATE_FRAMES_TO_TRY]
 
         detected = None
@@ -85,7 +85,7 @@ def main():
         if detected is None:
             print(f"{seq_name}: FAILED on all {len(rgb_files)} candidate frames -- needs manual check")
 
-    out_path = Path(__file__).parent / "sobone_crop_boxes.json"
+    out_path = Path(__file__).parent / "sawbone_crop_boxes.json"
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nWrote {out_path} ({len(results)}/{len(SEQUENCES)} sequences succeeded)")
