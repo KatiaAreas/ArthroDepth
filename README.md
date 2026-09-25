@@ -1,54 +1,154 @@
 <div align="center">
 <h1 style="border-bottom: none; margin-bottom: 0px">ArthroDepth</h1>
-<h3 style="border-top: none; margin-top: 3px;">Monocular metric depth and keypoint tracking for arthroscopic knee navigation</h3>
+<h3 style="border-top: none; margin-top: 3px;">Monocular metric depth for arthroscopic knee navigation</h3>
 </div>
 
-ArthroDepth is AREAS SAS's ARTHRONAV project: adapting [Depth Anything 3](https://github.com/ByteDance-Seed/Depth-Anything-3) (DA3METRIC-LARGE), via Vector-LoRA fine-tuning, to real-time monocular metric depth estimation on arthroscopic knee video, plus a keypoint-tracking layer (LiteTracker, CoTracker-based) for the eventual navigation pipeline.
+1. PROJECT
 
-This repository is a fork of [ByteDance-Seed/Depth-Anything-3](https://github.com/ByteDance-Seed/Depth-Anything-3). The upstream model and codebase (src/depth_anything_3/) are used as-is; all of ArthroDepth's own work lives under arthronav/.
+ARTHRONAV, AREAS SAS. Goal: real-time monocular metric depth estimation on
+arthroscopic knee video, as a building block for surgical navigation
+(depth + camera pose + segmentation).
 
-WHAT'S HERE
+Approach: fine-tune Depth Anything 3 (DA3METRIC-LARGE, 336.5M params) with
+Vector-LoRA (DARES-derived rank schedule, q/v attention only, ~0.3% of
+parameters trainable). Supervised, masked L1 loss on pixels with real ground
+truth. Ground truth comes from three different sources depending on dataset:
 
-- arthronav/ -- training, data preparation, and evaluation code for every dataset used: SCARED (endoscopic domain bridge), sawbone phantom (red and white), and real patient arthroscopic data (AREAS's own cohort, 8 patients across two recording sites).
-- Reports -- full writeups of method, results, and the roadmap: the depth fine-tuning report (SCARED to sawbone to real patient data to combined dataset) and the LiteTracker occlusion-robustness report.
-- checkpoints/ -- trained LoRA adapters (a few MB each, only the trainable weights) for each dataset and training regime.
+    SCARED        real endoscopic footage, active structured-light depth
+                  (domain bridge, not knee tissue)
+    sawbone       a physical phantom (red, then a second case "white"),
+                  ground truth from ray-tracing a known 3D-scanned mesh
+                  against tracked (OptiTrack) camera pose
+    real patient  our own cohort (8 patients, two recording sites), ground
+                  truth from a model-based ray-traced reprojection pipeline:
+                  a segmentation model locates the anatomy per frame, the
+                  bones are tracked, a patient-specific 3D surface scan is
+                  registered via calibration, and depth is ray-traced against
+                  that positioned model -- not stereo photogrammetry
 
-Key results so far: Vector-LoRA matches uniform LoRA at under half the trainable parameters; transfer learning from SCARED reverses on a true held-out test patient despite looking worse in validation, a leave-one-patient-out study is the current top priority; and continuing from the red-sawbone checkpoint onto white sawbone gives the cleanest, largest transfer-learning gain found in the whole project (about 2x). See the depth report for the full picture, including the negative results and the unit-consistency bugs found and fixed along the way.
+Data lives on the NAS at /mnt/areas_nas/SLAM/:
 
-INSTALLATION
+    scared_dataset_full_copy/        SCARED, h5 per frame
+    sawbone_dataset/                 red sawbone phantom
+    sawbone_white_dataset/           white sawbone phantom, already cropped
+    real_knee_dataset/               8 patients, per-clip, uncropped
+    real_knee_combined_dataset/      same 8 patients, cropped, combined,
+                                      the dataset the current best model uses
 
-Same as upstream DA3:
+2. ARTHRONAV/ -- IO AND TRAINING
 
-    pip install xformers torch>=2 torchvision
+Per-dataset IO + PyTorch Dataset pairs:
+
+    scared_io.py / scared_dataset.py
+    sawbone_io.py / sawbone_dataset.py            (red phantom)
+    real_knee_io.py / real_knee_dataset.py        (original 8-patient, per-clip)
+
+The combined real-knee dataset and the white-sawbone dataset read directly
+from their prepared folders (flat file lists) rather than a dedicated
+Dataset/IO pair, see train_real_knee_combined.py and train_sawbone_white.py.
+
+Shared utilities:
+
+    lora.py       inject_vector_lora() -- the adapter used everywhere
+    losses.py     masked_l1_loss
+    metrics.py    abs_rel, rmse, abs_error_stats
+    crop_utils.py crop_and_resize, shared by every cropping/prep script
+
+Training entry points, one per dataset (all default to Vector-LoRA, all
+accept --init-checkpoint to continue from an existing checkpoint instead of
+base DA3METRIC-LARGE):
+
+    train_scared.py
+    test_sawbone.py --mode {zero_shot,transfer_scared,from_scratch}
+    train_sawbone_white.py
+    train_real_knee.py                (original 5-patient, uncropped, mm)
+    train_real_knee_combined.py       (current best: 8 patients, cropped, m)
+
+Matching validate_*.py for each, taking --checkpoint and, where relevant,
+--split {val,test}.
+
+3. THE CROPPING
+
+Arthroscopic video shows a circular field of view inside a black rectangular
+frame (the endoscope's optics). Two different situations:
+
+    Real surgery (real_knee)      the circle moves frame to frame as the
+                                   scope shifts -- detected per frame,
+                                   precompute_circle_masks.py, written to
+                                   circle_boxes.json per clip
+
+    Sawbone benchtop rig          the circle stays fixed for a whole
+    (red and white)                sequence -- detected once per sequence,
+                                   precompute_crop_boxes.py /
+                                   precompute_crop_boxes_sawbone_white.py
+
+Detection uses an in-house tool, areas_theta_compute's CircleDetector (built
+on opencv-contrib-python), referred to informally as the notch detector.
+It writes its result to a JSON file and nothing else reads cv2 downstream:
+build_combined_real_knee_dataset.py and prepare_sawbone_white_data.py apply
+the actual crop (using crop_utils.py) and resize to 1022x1022 using the
+already-computed boxes, no detector involved at that stage.
+
+4. REQUIREMENTS AND HOW TO RUN
+
+Confirmed working versions (from the venv currently used for training):
+
+    torch==2.13.0
+    torchvision==0.28.0
+    xformers==0.0.35
+    opencv-python==4.11.0.86
+    addict==2.4.0
+    depth-anything-3   editable install of this repo itself (pip install -e .)
+
+Setup:
+
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install torch torchvision xformers
     pip install -e .
-    pip install --no-build-isolation git+https://github.com/nerfstudio-project/gsplat.git@0b4dddf04cb687367602c01196913cde6a743d70
+    pip install addict opencv-python
 
-Plus arthronav's own dependencies (addict, opencv-python, areas_theta_compute for circle detection -- install this last one standalone, before importing torch anywhere in the same process, see the note in precompute_circle_masks.py).
+If pip itself isn't found even with the venv active, use
+"venv/bin/python -m pip ..." directly rather than relying on PATH.
 
-BASE MODEL: DA3METRIC-LARGE
+If you rename or move this repo's folder after installing, the editable
+install breaks silently (it hardcodes the original absolute path) --
+rerun "pip install -e ." from the new location to fix it. This happened to
+us once already.
 
-ArthroDepth fine-tunes DA3METRIC-LARGE specifically (https://huggingface.co/depth-anything/DA3METRIC-LARGE, 0.35B params, monocular metric depth, Apache 2.0). Basic upstream usage:
+The circle detector (areas_theta_compute, opencv-contrib-python) is kept in
+a separate venv from torch, because the two bring in conflicting cuDNN
+builds that crash if loaded in the same process
+(CUDNN_STATUS_SUBLIBRARY_VERSION_MISMATCH). Run detection standalone first,
+in that separate venv, before switching back to the main venv for
+everything else.
 
-    import torch
-    from depth_anything_3.api import DepthAnything3
+Example: training the current best real-knee model, from scratch:
 
-    device = torch.device("cuda")
-    model = DepthAnything3.from_pretrained("depth-anything/DA3METRIC-LARGE")
-    model = model.to(device=device)
+    source venv/bin/activate
+    python -m arthronav.train_real_knee_combined --epochs 5 \
+        --checkpoint-dir checkpoints/real_knee_combined_from_scratch
 
-Metric depth scale note (upstream FAQ): to obtain metric depth in meters from a model that doesn't already output meters directly, use metric_depth = focal * net_output / 300. Every ArthroDepth checkpoint is trained to output real meters directly (verified empirically per dataset, see the depth report's units sections), so this conversion is not needed for our own checkpoints, only relevant if working with a raw/unfine-tuned upstream model.
+5. RESULTS AND METRICS
 
-UPSTREAM PROJECT
+Best real-knee model: train_real_knee_combined.py, from-scratch, epoch 1.
+AbsRel 0.1822 on both validation and the true held-out test patients (no
+validation/test divergence, unlike the earlier 5-patient pipeline where a
+transfer-learning checkpoint reversed rankings between validation and test).
 
-Depth Anything 3, from ByteDance Seed: paper (https://arxiv.org/abs/2511.10647), project page (https://depth-anything-3.github.io), original repo (https://github.com/ByteDance-Seed/Depth-Anything-3). See the upstream repository for the full model zoo, CLI/API documentation, and benchmark evaluation pipeline, none of that is duplicated here.
+Best sawbone transfer: continuing from the red-sawbone checkpoint onto the
+white-sawbone dataset roughly halves AbsRel at every matching epoch versus
+training from scratch (0.0334 vs 0.0746 at epoch 2), the cleanest transfer
+effect found across every dataset in this project.
 
-CITATION
+Sawbone (red to white transfer), best checkpoint on a held-out test
+sequence:
 
-If referencing the base model, cite the original paper:
+![sawbone results](results/sawbone_demo.gif)
 
-    @article{depthanything3,
-      title={Depth Anything 3: Recovering the visual space from any views},
-      author={Haotong Lin and Sili Chen and Jun Hao Liew and Donny Y. Chen and Zhenyu Li and Guang Shi and Jiashi Feng and Bingyi Kang},
-      journal={arXiv preprint arXiv:2511.10647},
-      year={2025}
-    }
+Real patient data, from-scratch checkpoint on a held-out test patient:
+
+![real knee results](results/real_knee_demo.gif)
+
+Full-length videos for both are in results/ (sawbone_comparison_lateral3.mp4,
+from_scratch_best_test_patient.mp4).
